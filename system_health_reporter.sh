@@ -1,65 +1,88 @@
 #!/bin/bash
-# =====================================
+# ============================================
 # Scheduled System Health Reporter
 # Author: Gaurav Chile
-# =====================================
+# ============================================
 
-OUTPUT_DIR="/var/log/system_health"
+LOG_DIR="/var/log/system_health"
+mkdir -p "$LOG_DIR"
+
 SCRIPT_PATH="$(realpath $0)"
 
-# Create log directory
-mkdir -p "$OUTPUT_DIR"
+# ====== CONFIG ======
+EMAIL_ENABLED=true
+EMAIL_TO="admin@example.com"
 
-# Function: Generate report
-generate_report() {
-    OUTPUT_FILE="$OUTPUT_DIR/health_$(date +%F_%H-%M-%S).log"
+SLACK_ENABLED=true
+SLACK_WEBHOOK_URL="https://hooks.slack.com/services/XXXX/YYYY/ZZZZ"
+# ====================
+
+report() {
+    TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
+    OUTPUT_FILE="$LOG_DIR/health_$TIMESTAMP.log"
 
     {
-    echo "===== System Health Report: $(date) ====="
+        echo "===== System Health Report: $(date) ====="
 
-    # Disk usage
-    echo -e "\n--- Disk Usage ---"
-    df -h --output=source,size,used,avail,pcent,target | column -t
+        echo -e "\n--- Disk Usage ---"
+        df -h
 
-    # CPU load
-    echo -e "\n--- CPU Load (1/5/15 min) ---"
-    uptime | awk -F'load average: ' '{print $2}'
+        echo -e "\n--- CPU Load ---"
+        uptime
 
-    # Memory usage
-    echo -e "\n--- Memory Usage ---"
-    free -h
+        echo -e "\n--- Memory Usage ---"
+        free -h
 
-    # Top 5 CPU-consuming processes
-    echo -e "\n--- Top 5 CPU Processes ---"
-    ps -eo pid,ppid,cmd,%mem,%cpu --sort=-%cpu | head -n 6
+        echo -e "\n--- Top 5 Processes (CPU) ---"
+        ps -eo pid,ppid,cmd,%mem,%cpu --sort=-%cpu | head -n 6
 
-    # Top 5 Memory-consuming processes
-    echo -e "\n--- Top 5 Memory Processes ---"
-    ps -eo pid,ppid,cmd,%mem,%cpu --sort=-%mem | head -n 6
+        echo -e "\n===== End of Report ====="
+    } > "$OUTPUT_FILE"
 
-    echo -e "\n===== End of Report ====="
+    echo "✅ Report saved: $OUTPUT_FILE"
 
-    } >> "$OUTPUT_FILE"
+    # --- Email Notification ---
+    if [ "$EMAIL_ENABLED" = true ]; then
+        if command -v mail >/dev/null 2>&1; then
+            cat "$OUTPUT_FILE" | mail -s "System Health Report $(date)" "$EMAIL_TO"
+            echo "📧 Report emailed to $EMAIL_TO"
+        else
+            echo "⚠️ 'mail' command not found, skipping email."
+        fi
+    fi
 
-    echo " Report generated: $OUTPUT_FILE"
+    # --- Slack Notification ---
+    if [ "$SLACK_ENABLED" = true ]; then
+        if command -v curl >/dev/null 2>&1; then
+            MESSAGE="*System Health Report* - $(date)\n\`\`\`$(tail -n 20 "$OUTPUT_FILE")\`\`\`"
+            curl -s -X POST -H 'Content-type: application/json' \
+                --data "{\"text\":\"$MESSAGE\"}" \
+                "$SLACK_WEBHOOK_URL"
+            echo "💬 Report sent to Slack"
+        else
+            echo "⚠️ 'curl' not found, skipping Slack notification."
+        fi
+    fi
 }
 
-# Function: Install cron job
 install_cron() {
-    echo "  Installing cron job to run every hour..."
-    # Check if cron job already exists
-    (crontab -l 2>/dev/null | grep -v "$SCRIPT_PATH" ; echo "0 * * * * $SCRIPT_PATH --report") | crontab -
-    echo " Cron job installed."
+    crontab -l 2>/dev/null | grep -q "$SCRIPT_PATH --report"
+    if [ $? -eq 0 ]; then
+        echo "✅ Cron job already exists."
+    else
+        (crontab -l 2>/dev/null; echo "0 * * * * $SCRIPT_PATH --report") | crontab -
+        echo "✅ Cron job installed: Runs every hour."
+    fi
 }
 
-# Main logic
-if [[ "$1" == "--report" ]]; then
-    generate_report
-elif [[ "$1" == "--install" ]]; then
-    install_cron
-else
-    echo "Usage:"
-    echo "  $0 --report    # Generate report now"
-    echo "  $0 --install   # Install cron job (hourly)"
-fi
-
+case "$1" in
+    --report)
+        report
+        ;;
+    --install)
+        install_cron
+        ;;
+    *)
+        echo "Usage: $0 [--report | --install]"
+        ;;
+esac
