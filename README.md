@@ -30,4 +30,3 @@ sudo apt install -y mailutils
 
 Enable Slack
 Create a Slack Incoming Webhook (guide)
-Replace the placeholder in script:
