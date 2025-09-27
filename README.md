@@ -21,4 +21,13 @@ Make script executable:
 
 chmod +x system_health_reporter.sh
 ./system_health_reporter.sh --report (manually)
-./system_health_reporter.sh --install (install hourly cron) 
+./system_health_reporter.sh --install (install hourly cron)
+
+🔧 How to Use Notifications
+Enable Email
+Install mail utils:
+sudo apt install -y mailutils
+
+Enable Slack
+Create a Slack Incoming Webhook (guide)
+Replace the placeholder in script:
